@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Tomato SOC — Security Operations Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='soc.css') }}">
+</head>
+<body>
+
+<!-- SCANLINE OVERLAY -->
+<div class="scanline"></div>
+<div class="grid-bg"></div>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo-block">
+      <span class="logo-icon">🍅</span>
+      <div>
+        <div class="logo-title">TOMATO SOC</div>
+        <div class="logo-sub">Security Operations Center</div>
+      </div>
+    </div>
+    <div class="status-pill" id="statusPill">
+      <span class="pulse-dot"></span>
+      <span>CONNECTED</span>
+    </div>
+  </div>
+  <div class="header-center">
+    <div class="clock-block">
+      <div class="clock" id="clock">00:00:00</div>
+      <div class="clock-date" id="clockDate">—</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="export-dropdown">
+      <button class="hdr-btn export-btn">⬇ Export</button>
+      <div class="dropdown-menu">
+        <a onclick="exportPCAP(false)">📦 PCAP — All Traffic</a>
+        <a onclick="exportPCAP(true)">🔴 PCAP — Threats Only</a>
+        <a onclick="exportJSON()">📋 JSON Logs</a>
+        <a onclick="exportCSV()">📊 CSV Logs</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- STAT CARDS -->
+<section class="stats-row">
+  <div class="stat-card sc-total">
+    <div class="sc-icon">📡</div>
+    <div class="sc-body">
+      <div class="sc-val" id="scTotal">0</div>
+      <div class="sc-label">Total Requests</div>
+    </div>
+    <div class="sc-sparkline" id="spkTotal"></div>
+  </div>
+  <div class="stat-card sc-sql">
+    <div class="sc-icon">💉</div>
+    <div class="sc-body">
+      <div class="sc-val" id="scSql">0</div>
+      <div class="sc-label">SQL Injections</div>
+    </div>
+  </div>
+  <div class="stat-card sc-xss">
+    <div class="sc-icon">⚡</div>
+    <div class="sc-body">
+      <div class="sc-val" id="scXss">0</div>
+      <div class="sc-label">XSS Attacks</div>
+    </div>
+  </div>
+  <div class="stat-card sc-ddos">
+    <div class="sc-icon">🌊</div>
+    <div class="sc-body">
+      <div class="sc-val" id="scDdos">0</div>
+      <div class="sc-label">DDoS Events</div>
+    </div>
+  </div>
+  <div class="stat-card sc-malware">
+    <div class="sc-icon">☠️</div>
+    <div class="sc-body">
+      <div class="sc-val" id="scMalware">0</div>
+      <div class="sc-label">Malware/Tools</div>
+    </div>
+  </div>
+  <div class="stat-card sc-blocked">
+    <div class="sc-icon">🚫</div>
+    <div class="sc-body">
+      <div class="sc-val" id="scBlocked">0</div>
+      <div class="sc-label">Blocked IPs</div>
+    </div>
+  </div>
+</section>
+
+<!-- MAIN GRID -->
+<div class="main-grid">
+
+  <!-- LEFT: LIVE TRAFFIC -->
+  <div class="panel traffic-panel">
+    <div class="panel-header">
+      <span class="panel-title">
+        <span class="live-dot"></span> LIVE TRAFFIC STREAM
+      </span>
+      <div class="panel-actions">
+        <input class="filter-input" id="logFilter" placeholder="Filter by IP, path, threat…" oninput="filterLogs()"/>
+        <button class="icon-btn" onclick="clearLogs()" title="Clear">🗑</button>
+      </div>
+    </div>
+    <div class="traffic-table-wrap">
+      <table class="traffic-table">
+        <thead>
+          <tr>
+            <th>TIME</th>
+            <th>IP ADDRESS</th>
+            <th>METHOD</th>
+            <th>PATH</th>
+            <th>THREAT</th>
+            <th>SEVERITY</th>
+            <th>ACTION</th>
+          </tr>
+        </thead>
+        <tbody id="trafficBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div class="right-col">
+
+    <!-- ALERTS -->
+    <div class="panel alerts-panel">
+      <div class="panel-header">
+        <span class="panel-title">🔔 ACTIVE ALERTS</span>
+        <button class="icon-btn" onclick="clearAlerts()">🗑</button>
+      </div>
+      <div class="alerts-list" id="alertsList">
+        <div class="empty-state">No alerts yet — system monitoring…</div>
+      </div>
+    </div>
+
+    <!-- CHART -->
+    <div class="panel chart-panel">
+      <div class="panel-header">
+        <span class="panel-title">📊 ATTACK DISTRIBUTION</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="attackChart"></canvas>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- BLOCKED IPs TABLE -->
+<div class="panel blocked-panel">
+  <div class="panel-header">
+    <span class="panel-title">🚫 BLOCKED IPs</span>
+    <div class="panel-actions">
+      <input class="filter-input" id="blockFilter" placeholder="Search IP…" oninput="filterBlocked()"/>
+      <button class="hdr-btn" onclick="openManualBlock()">+ Manual Block</button>
+    </div>
+  </div>
+  <table class="traffic-table">
+    <thead>
+      <tr>
+        <th>IP ADDRESS</th>
+        <th>REASON</th>
+        <th>BLOCKED AT</th>
+        <th>EXPIRES</th>
+        <th>ACTION</th>
+      </tr>
+    </thead>
+    <tbody id="blockedBody">
+      <tr><td colspan="5" class="empty-td">No blocked IPs</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- MANUAL BLOCK MODAL -->
+<div class="modal-overlay" id="blockModal" onclick="closeModal(event)">
+  <div class="modal-box">
+    <div class="modal-title">🚫 Manual IP Block</div>
+    <div class="form-row">
+      <label>IP Address</label>
+      <input class="modal-input" id="manualIp" placeholder="e.g. 192.168.1.55"/>
+    </div>
+    <div class="form-row">
+      <label>Reason</label>
+      <input class="modal-input" id="manualReason" placeholder="MANUAL_BLOCK" value="MANUAL_BLOCK"/>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="document.getElementById('blockModal').classList.remove('open')">Cancel</button>
+      <button class="modal-submit" onclick="submitManualBlock()">Block IP</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script src="{{ url_for('static', filename='soc.js') }}"></script>
+</body>
+</html>

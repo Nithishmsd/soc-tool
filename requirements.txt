@@ -1,0 +1,10 @@
+flask-cors
+flask==3.0.3
+flask-socketio==5.3.6
+flask-cors==4.0.1
+eventlet
+requests
+python-socketio==5.11.2
+python-engineio==4.9.1
+gunicorn==22.0.0
+  
